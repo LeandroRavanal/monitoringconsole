@@ -1,0 +1,147 @@
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Consola</title>
+  <style type="text/css">
+  table { border-collapse: collapse; }
+  table, th, td { border: 1px solid black; }
+  </style>
+</head>
+<body>
+<h2>Proceso</h2>
+  <div id="info_process"></div>
+  Nombre:
+  <select name="process">
+    <option value="morning">Morning</option>
+    <option value="evening">Evening</option>
+  </select>
+  <input type="button" name="button" value="ejecutar" onclick="process.execute();" />
+<h2>Resumen</h2>
+  <div id="info_summary"></div>
+  <table id="summary">
+    <thead>
+      <tr>
+      <th>Proceso</th>
+      <th>Fecha</th>
+      <th>Ejecuciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+      <td colspan="3">Sin registros</td>
+      </tr>
+    </tbody>
+  </table>
+<script type="text/javascript">
+'use strict';
+var URL = '/api/v1/processes/';
+var REFRESH = 10000; //10 segundos
+function Process() {
+	this.info = document.querySelector('#info_process');
+	this.button = document.querySelector('input[name="button"]');
+	this.processInput = document.querySelector('select[name="process"]');
+	
+	this.event = null;
+	this.xhr = null;
+}
+Process.prototype.url = function(process) {
+	return URL+process;
+}
+Process.prototype.response = function() {
+	if (this.xhr.readyState === XMLHttpRequest.DONE) {
+	    if (this.xhr.status === 200) {
+	        let response = JSON.parse(this.xhr.responseText);  
+	        this.info.textContent = this.event+' (OK): '+'Fecha:'+response.time+' - Ejecuciones:'+response.count;
+	        summary.update(response.name, response.time, response.count);
+	    } else {
+	        let error = '';
+	        try {
+	            error = JSON.parse(this.xhr.responseText).error;
+	        } catch(e) {
+	            error = this.xhr.statusText!=''?this.xhr.statusText:'Sin detalle';
+	        }
+	        this.info.textContent = this.event+' (Error): '+error;
+	    }
+	    this.button.value = 'ejecutar';
+	    this.button.disabled = '';
+    }
+}
+Process.prototype.execute = function() {
+	this.info.textContent = 'Procesando...';
+	this.button.value = 'ejecutando';
+	this.button.disabled = 'disabled';
+	
+	let process = this.processInput.value;
+	this.event = this.processInput.options[this.processInput.selectedIndex].text;
+	
+	this.xhr = new XMLHttpRequest();
+	this.xhr.open('POST', this.url(process));
+	this.xhr.onreadystatechange = this.response.bind(this);
+	this.xhr.send();
+}
+var process = new Process();
+</script>
+<script type="text/javascript">
+'use strict';
+function Summary() {
+	this.info = document.querySelector('#info_summary');
+	this.fields = ['name', 'time', 'count'];
+	
+	this.intent = 0;
+	this.timeout = REFRESH;
+	this.xhr = null;
+}
+Summary.prototype.populate = function(tbody, processes) {
+	if (!processes.length) {
+	    let tr = document.createElement('tr');
+	    tbody.appendChild(tr);
+	    let td = document.createElement('td');
+	    td.colSpan = 3;
+	    td.textContent = 'Sin registros';
+	    tr.appendChild(td);     
+	}  
+	processes.forEach(process => {
+		let tr = document.createElement('tr');
+		tbody.appendChild(tr);
+		this.fields.forEach(field => {
+			let td = document.createElement('td');
+			td.textContent = process[field];
+			tr.appendChild(td);
+		});
+	});
+}
+Summary.prototype.update = function(name, time, count) {
+	let tbody = document.querySelector('#summary tbody');
+	let row = Array.from(tbody.rows).filter(row => row.cells[0].textContent == name);
+	if (row.length) {
+		row[0].cells[1].textContent = time; 
+		row[0].cells[2].textContent = count;
+	}
+}
+Summary.prototype.response = function() {
+	if (this.xhr.readyState === XMLHttpRequest.DONE) {
+		if (this.xhr.status === 200) {
+			this.intent = 0;
+			this.info.textContent = '';
+			let old_tbody = document.querySelector('#summary tbody');
+			let new_tbody = document.createElement('tbody');
+			this.populate(new_tbody, JSON.parse(this.xhr.responseText));
+			old_tbody.parentNode.replaceChild(new_tbody, old_tbody);
+		} else {
+			this.intent++;
+			this.info.textContent = 'Error al consumir información de procesos'+(this.intent>1?' (reintentos: '+this.intent+') ':'');
+		}
+		setTimeout(this.request.bind(this), this.timeout);
+	}	
+}
+Summary.prototype.request = function() {
+	this.xhr = new XMLHttpRequest();
+	this.xhr.open('GET', URL);
+	this.xhr.onreadystatechange = this.response.bind(this);
+	this.xhr.send();
+}
+var summary = new Summary();
+summary.request();
+</script>
+</body>
+</html>
